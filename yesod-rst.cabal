@@ -37,4 +37,4 @@ library
 
 source-repository head
   type:         git
-  location:     git://github.com/psub/yesod-rst.git
+  location:     git://github.com/pSub/yesod-rst.git
