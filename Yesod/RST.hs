@@ -24,7 +24,7 @@ module Yesod.RST
 import Yesod.Form            (ToField(..), areq, aopt)
 import Yesod.Core            (RenderMessage, SomeMessage(..))
 import Yesod.Form.Types
-import Yesod.Widget          (addHamlet)
+import Yesod.Widget          (toWidget)
 import Text.Hamlet           (hamlet, Html)
 import Database.Persist      (PersistField)
 
@@ -51,7 +51,7 @@ instance ToField (Maybe RST) master where
 rstField :: RenderMessage master FormMessage => Field sub master RST
 rstField = Field
     { fieldParse = blank $ Right . RST . unlines . lines' . unpack
-    , fieldView = \theId name attrs val _isReq -> addHamlet
+    , fieldView = \theId name attrs val _isReq -> toWidget
         [hamlet|
 <textarea id="#{theId}" name="#{name}" *{attrs}>#{either id unRST val}
 |]
