@@ -36,7 +36,7 @@ import Data.Monoid           (Monoid)
 import Data.String           (IsString)
 import System.Directory      (doesFileExist)
 
-import Data.Text             (Text, pack, unpack, intercalate)
+import Data.Text             (Text, pack, unpack)
 
 
 newtype RST = RST String
@@ -51,9 +51,9 @@ instance ToField (Maybe RST) master where
 rstField :: RenderMessage master FormMessage => Field sub master RST
 rstField = Field
     { fieldParse = blank $ Right . RST . unlines . lines' . unpack
-    , fieldView = \theId name theClass val _isReq -> addHamlet
+    , fieldView = \theId name attrs val _isReq -> addHamlet
         [hamlet|
-<textarea id="#{theId}" name="#{name}" :not (null theClass):class="#{intercalate " " theClass}">#{either id unRST val}
+<textarea id="#{theId}" name="#{name}" *{attrs}>#{either id unRST val}
 |]
     }
         where
