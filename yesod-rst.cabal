@@ -14,16 +14,16 @@ cabal-version:       >=1.6
 library
   exposed-modules: Yesod.RST
 
-  build-depends: base            >= 4     && < 5
-               , text            >= 0.11  && < 0.12
-               , pandoc          >= 1.9   && < 1.10
-               , blaze-html      >= 0.4   && < 0.5
-               , xss-sanitize    >= 0.3.1 && < 0.4
+  build-depends: base               >= 4     && < 5
+               , text               >= 0.11  && < 0.12
+               , pandoc             >= 1.9   && < 1.10
+               , blaze-html         >= 0.4   && < 0.5
+               , xss-sanitize       >= 0.3.1 && < 0.4
                , directory
-               , yesod-core      >= 0.10  && < 0.11
-               , yesod-form      >= 0.4   && < 0.5
-               , hamlet
-               , persistent
+               , yesod-core         >= 1.0   && < 1.1
+               , yesod-form         >= 1.0   && < 1.1
+               , hamlet             >= 1.0   && < 1.1
+               , persistent         >= 0.9   && < 0.10
 
   ghc-options: -Wall
 
