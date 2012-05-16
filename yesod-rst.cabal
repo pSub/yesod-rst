@@ -1,5 +1,5 @@
 name:                yesod-rst
-version:             0.2
+version:             0.2.1
 synopsis:            Tools for using reStructuredText (RST) in a yesod application
 description:         A subset of pandoc functionality useful for RST processing in yesod applications
 homepage:            http://github.com/pSub/yesod-rst
