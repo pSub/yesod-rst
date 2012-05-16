@@ -35,7 +35,6 @@ library
               MultiParamTypeClasses
               GeneralizedNewtypeDeriving
 
-source-repository this
+source-repository head
   type:         git
   location:     git://github.com/pSub/yesod-rst.git
-  tag:          0.2
