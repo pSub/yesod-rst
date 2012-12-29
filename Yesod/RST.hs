@@ -50,11 +50,12 @@ instance ToField (Maybe RST) master where
 
 rstField :: RenderMessage master FormMessage => Field sub master RST
 rstField = Field
-    { fieldParse = blank $ Right . RST . unlines . lines' . unpack
+    { fieldParse = \values _ -> (blank $ Right . RST . unlines . lines' . unpack) values
     , fieldView = \theId name attrs val _isReq -> toWidget
         [hamlet|
 <textarea id="#{theId}" name="#{name}" *{attrs}>#{either id unRST val}
 |]
+   , fieldEnctype = UrlEncoded
     }
         where
         unRST :: RST -> Text
