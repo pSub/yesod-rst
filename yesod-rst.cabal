@@ -5,7 +5,7 @@ description:         A subset of pandoc functionality useful for RST processing 
 homepage:            http://github.com/pSub/yesod-rst
 license:             GPL
 license-file:        LICENSE
-author:              Pascal Wittmann (based on code from Patrick Brisbin)
+author:              Pascal Wittmann
 maintainer:          Pascal Wittmann <mail@pascal-wittmann.de>
 category:            Web, Yesod
 build-type:          Simple
