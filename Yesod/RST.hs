@@ -8,6 +8,8 @@ module Yesod.RST
   -- * Wrappers
   , rstToHtml
   , rstToHtmlTrusted
+  , rstToHtmlWithExtensions
+  , rstToHtmlWith
   , rstFromFile
   -- * Conversions
   , parseRST
@@ -15,21 +17,27 @@ module Yesod.RST
   , writePandocTrusted
   -- * Option sets
   , yesodDefaultWriterOptions
-  , yesodDefaultParserState
+  , yesodDefaultReaderOptions
+  , yesodDefaultExtensions
   -- * Form helper
   , rstField
-  )
-  where
+  ) where
 
-import Yesod.Form            (ToField(..), areq, aopt)
-import Yesod.Core            (RenderMessage, SomeMessage(..))
+import Control.Monad ((<=<))
+
+import Yesod.Form            (areq, aopt)
+import Yesod.Core            (HandlerSite, RenderMessage)
+import Yesod.Core.Widget     (toWidget)
 import Yesod.Form.Types
-import Yesod.Widget          (toWidget)
+import Yesod.Form.Functions  (parseHelper)
 import Text.Hamlet           (hamlet, Html)
-import Database.Persist      (PersistField)
+import Database.Persist      (PersistField, SqlType(SqlString))
+import Database.Persist.Sql  (PersistFieldSql(..))
 
+
+import Text.Blaze            (ToMarkup(toMarkup))
 import Text.Blaze.Html       (preEscapedToMarkup)
-import Text.Pandoc
+import Text.Pandoc    hiding (handleError)
 import Text.HTML.SanitizeXSS (sanitizeBalance)
 
 import Data.Monoid           (Monoid)
@@ -37,82 +45,138 @@ import Data.String           (IsString)
 import System.Directory      (doesFileExist)
 
 import Data.Text             (Text, pack, unpack)
+import Data.Text.Encoding    (decodeUtf8With)
+import Data.Text.Encoding.Error (lenientDecode)
 
 
-newtype RST = RST String
-   deriving (Eq, Ord, Show, Read, PersistField, IsString, Monoid)
+import qualified Data.ByteString as B
 
-instance ToField RST master where
-   toField = areq rstField
 
-instance ToField (Maybe RST) master where
-   toField = aopt rstField
+newtype RST = RST { unRST :: Text }
+   deriving (Eq, Ord, Show, Read, PersistField, IsString, Monoid, Semigroup)
 
-rstField :: RenderMessage master FormMessage => Field sub master RST
+instance PersistFieldSql RST where
+    sqlType _ = SqlString
+
+instance ToMarkup RST where
+    -- | Sanitized by default
+    toMarkup = handleError . rstToHtml
+
+rstField :: Monad m => RenderMessage (HandlerSite m) FormMessage => Field m RST
 rstField = Field
-    { fieldParse = \values _ -> (blank $ Right . RST . unlines . lines' . unpack) values
+    { fieldParse = parseHelper $ Right . RST
     , fieldView = \theId name attrs val _isReq -> toWidget
         [hamlet|
 <textarea id="#{theId}" name="#{name}" *{attrs}>#{either id unRST val}
 |]
    , fieldEnctype = UrlEncoded
     }
-        where
-        unRST :: RST -> Text
-        unRST (RST s) = pack s
 
-        lines' :: String  -> [String]
-        lines' = map (filter (/= '\r')) . lines
+-- | Process RST using our options and sanitization
+rstToHtml :: RST -> Either PandocError Html
+rstToHtml = rstToHtmlWith
+    yesodDefaultReaderOptions
+    yesodDefaultWriterOptions
 
-blank :: (Monad m, RenderMessage master FormMessage)
-      => (Text -> Either FormMessage a) -> [Text] -> m (Either (SomeMessage master) (Maybe a))
-blank _ [] = return $ Right Nothing
-blank _ ("":_) = return $ Right Nothing
-blank f (x:_) = return $ either (Left . SomeMessage) (Right . Just) $ f x
+-- | No HTML sanitization
+--
+-- **NOTE**: Use only with /fully-trusted/ input.
+--
+rstToHtmlTrusted :: RST -> Either PandocError Html
+rstToHtmlTrusted = rstToHtmlWith' id
+    yesodDefaultReaderOptions
+    yesodDefaultWriterOptions
 
--- | Converts RST to sanitizied Html
-rstToHtml :: RST -> Html
-rstToHtml = writePandoc yesodDefaultWriterOptions
-          . parseRST yesodDefaultParserState
+-- | Process RST with given extensions
+--
+-- Uses our options, and overrides extensions only.
+--
+rstToHtmlWithExtensions
+    :: Extensions
+    -> RST
+    -> Either PandocError Html
+rstToHtmlWithExtensions exts = rstToHtmlWith
+    yesodDefaultReaderOptions { readerExtensions = exts }
+    yesodDefaultWriterOptions { writerExtensions = exts }
 
--- | Converts RST to unsanitizied Html
-rstToHtmlTrusted :: RST -> Html
-rstToHtmlTrusted = writePandocTrusted yesodDefaultWriterOptions
-                 . parseRST yesodDefaultParserState
+-- | Fully controllable RST processing
+rstToHtmlWith
+    :: ReaderOptions
+    -> WriterOptions
+    -> RST
+    -> Either PandocError Html
+rstToHtmlWith = rstToHtmlWith' sanitizeBalance
 
--- | Reads RST in from the specified file; returns the empty string
---   if the file does not exist
+-- | Internal function, the only way to skip sanitization
+rstToHtmlWith'
+    :: (Text -> Text)
+    -> ReaderOptions
+    -> WriterOptions
+    -> RST
+    -> Either PandocError Html
+rstToHtmlWith' sanitize ropts wopts =
+    writePandocWith sanitize wopts <=< parseRST ropts
+
+
+-- | Returns the empty string if the file does not exist
 rstFromFile :: FilePath -> IO RST
 rstFromFile f = do
     exists <- doesFileExist f
-    content <- do
-        if exists
-           then readFile f
-           else return ""
-    return $ RST content
+    RST <$> if exists
+        then readFileUtf8 f
+        else return ""
 
--- | Converts the intermediate Pandoc type to Html. Sanitizes HTML.
-writePandoc :: WriterOptions -> Pandoc -> Html
-writePandoc wo = preEscapedToMarkup . sanitizeBalance . pack . writeHtmlString wo
+  where
+    readFileUtf8 :: FilePath -> IO Text
+    readFileUtf8 fp = decodeUtf8With lenientDecode <$> B.readFile fp
 
--- | Skips the sanitization and its required conversion to Text
-writePandocTrusted :: WriterOptions -> Pandoc -> Html
-writePandocTrusted wo = preEscapedToMarkup . writeHtmlString wo
+writePandoc :: WriterOptions -> Pandoc -> Either PandocError Html
+writePandoc = writePandocWith sanitizeBalance
+{-# DEPRECATED writePandoc "Don't use this directly" #-}
 
--- | Parses Markdown into the intermediate Pandoc type
-parseRST :: ParserState -> RST -> Pandoc
-parseRST ro (RST m) = readRST ro m
+writePandocTrusted :: WriterOptions -> Pandoc -> Either PandocError Html
+writePandocTrusted = writePandocWith id
+{-# DEPRECATED writePandocTrusted "Don't use this directly" #-}
 
--- | Pandoc defaults, plus Html5, minus WrapText
+writePandocWith
+    :: (Text -> Text)
+    -> WriterOptions
+    -> Pandoc
+    -> Either PandocError Html
+writePandocWith f wo
+    = (preEscapedToMarkup . f <$>)
+    . runPure
+    . writeHtml5String wo
+
+-- | Parses RST into the intermediate Pandoc type
+parseRST :: ReaderOptions -> RST -> Either PandocError Pandoc
+parseRST ro = runPure . readRST ro . unRST
+{-# DEPRECATED parseRST "Don't use this directly" #-}
+
+-- | Defaults minus WrapText, plus our extensions
 yesodDefaultWriterOptions :: WriterOptions
-yesodDefaultWriterOptions = defaultWriterOptions
-  { writerHtml5    = True
-  , writerWrapText = False
-  }
-
--- | Pandoc defaults, plus Smart, plus ParseRaw
-yesodDefaultParserState :: ParserState
-yesodDefaultParserState = defaultParserState
-    { stateSmart    = True
-    , stateParseRaw = True
+yesodDefaultWriterOptions = def
+    { writerWrapText = WrapNone
+    , writerExtensions = extensionsFromList yesodDefaultExtensions
     }
+
+-- | Defaults plus our extensions, see @'yesodDefaultExtensions'@
+yesodDefaultReaderOptions :: ReaderOptions
+yesodDefaultReaderOptions = def
+    { readerExtensions = extensionsFromList yesodDefaultExtensions
+    }
+
+-- | @raw_html@ and @auto_identifiers@
+yesodDefaultExtensions :: [Extension]
+yesodDefaultExtensions =
+    [ Ext_raw_html
+    , Ext_auto_identifiers
+    ]
+
+-- | Unsafely handle a @'PandocError'@
+--
+-- This is analagous to pandoc-1 behavior, and is required in a pure context
+-- such as the @'ToMarkup'@ instance.
+--
+handleError :: Either PandocError a -> a
+handleError = either (error . show) id
